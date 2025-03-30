@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+type AccountStatus = 'loading' | 'valid' | 'invalid' | 'empty' | 'hex';
 
 export default function Home() {
   const [formData, setFormData] = useState({
@@ -9,9 +11,11 @@ export default function Home() {
   });
   const [generatedUrl, setGeneratedUrl] = useState('');
   const [showToast, setShowToast] = useState(false);
+  const [accountStatus, setAccountStatus] = useState<AccountStatus>('loading');
+  const [accountBalance, setAccountBalance] = useState<string>('');
 
   const generateRandomId = async () => {
-    const array = new Uint8Array(12); // 12 bytes will give us 16 characters in base64
+    const array = new Uint8Array(12);
     crypto.getRandomValues(array);
     return btoa(String.fromCharCode(...array))
       .replace(/\+/g, '-')
@@ -20,15 +24,71 @@ export default function Home() {
       .slice(0, 16);
   };
 
+  const checkAccount = async (accountId: string) => {
+    if (!accountId) {
+      setAccountStatus('loading');
+      setAccountBalance('');
+      return;
+    }
+
+    // Check if the account ID matches the hex pattern or EVM address pattern
+    if (/^[a-f0-9]{64}$/.test(accountId) || /^0x[a-f0-9]{40}$/.test(accountId)) {
+      setAccountStatus('empty');
+      setAccountBalance('');
+      return;
+    }
+
+    try {
+      const response = await fetch('https://rpc.mainnet.near.org', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 'dontcare',
+          method: 'query',
+          params: {
+            request_type: 'view_account',
+            finality: 'final',
+            account_id: accountId,
+          },
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.error) {
+        setAccountStatus('invalid');
+        setAccountBalance('');
+        return;
+      }
+
+      const balance = data.result.amount;
+      const balanceInNear = (parseInt(balance) / 1e24).toFixed(5);
+      setAccountBalance(balanceInNear);
+      setAccountStatus(parseInt(balance) === 0 ? 'empty' : 'valid');
+    } catch (error) {
+      setAccountStatus('invalid');
+      setAccountBalance('');
+    }
+  };
+
+  useEffect(() => {
+    const debounceTimeout = setTimeout(() => {
+      checkAccount(formData.recipientAccount);
+    }, 500);
+
+    return () => clearTimeout(debounceTimeout);
+  }, [formData.recipientAccount]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const invoiceId = `inv-${await generateRandomId()}`;
     const url = `https://tearpay-demo.intear.tech/?amountUsd=${Number(formData.amount).toFixed(2)}&invoiceId=${invoiceId}&recipientAddress=${formData.recipientAccount}`;
     
-    // Set the generated URL
     setGeneratedUrl(url);
     
-    // Handle copy action
     try {
       await navigator.clipboard.writeText(url);
       setShowToast(true);
@@ -37,11 +97,34 @@ export default function Home() {
       console.error('Failed to copy text: ', err);
     }
     
-    // Clear form
     setFormData({
       recipientAccount: '',
       amount: '',
     });
+  };
+
+  const getInputBorderColor = () => {
+    switch (accountStatus) {
+      case 'valid':
+        return 'border-green-500 focus:border-green-500';
+      case 'invalid':
+        return 'border-red-500 focus:border-red-500';
+      case 'empty':
+        return 'border-yellow-500 focus:border-yellow-500';
+      default:
+        return 'border-gray-700 focus:border-blue-500';
+    }
+  };
+
+  const getStatusMessage = () => {
+    switch (accountStatus) {
+      case 'invalid':
+        return 'Account does not exist';
+      case 'empty':
+        return 'Account has 0 NEAR';
+      default:
+        return '';
+    }
   };
 
   return (
@@ -68,10 +151,18 @@ export default function Home() {
                 placeholder="example.near"
                 value={formData.recipientAccount}
                 onChange={(e) => setFormData({ ...formData, recipientAccount: e.target.value })}
-                className="w-full px-4 py-3 bg-gray-900/70 border border-gray-700 rounded-lg focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-500"
+                className={`w-full px-4 py-3 bg-gray-900/70 border rounded-lg focus:ring-2 focus:ring-opacity-50 text-white placeholder-gray-500 ${getInputBorderColor()}`}
                 required
               />
             </div>
+            {accountStatus !== 'loading' && accountStatus !== 'valid' && (
+              <p className={`mt-2 text-sm ${
+                accountStatus === 'invalid' ? 'text-red-400' :
+                'text-yellow-400'
+              }`}>
+                {getStatusMessage()}
+              </p>
+            )}
           </div>
 
           <div>
@@ -95,7 +186,12 @@ export default function Home() {
 
           <button
             type="submit"
-            className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg transition-all duration-200 font-medium"
+            disabled={accountStatus === 'invalid' || accountStatus === 'loading'}
+            className={`w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-lg transition-all duration-200 font-medium ${
+              accountStatus === 'invalid' || accountStatus === 'loading'
+                ? 'opacity-50 cursor-not-allowed'
+                : ''
+            }`}
           >
             {generatedUrl ? 'Generate Another Invoice' : 'Generate Invoice Link'}
           </button>
