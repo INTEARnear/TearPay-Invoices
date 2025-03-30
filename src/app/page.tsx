@@ -12,7 +12,6 @@ export default function Home() {
   const [generatedUrl, setGeneratedUrl] = useState('');
   const [showToast, setShowToast] = useState(false);
   const [accountStatus, setAccountStatus] = useState<AccountStatus>('loading');
-  const [accountBalance, setAccountBalance] = useState<string>('');
 
   const generateRandomId = async () => {
     const array = new Uint8Array(12);
@@ -27,14 +26,12 @@ export default function Home() {
   const checkAccount = async (accountId: string) => {
     if (!accountId) {
       setAccountStatus('loading');
-      setAccountBalance('');
       return;
     }
 
     // Check if the account ID matches the hex pattern or EVM address pattern
     if (/^[a-f0-9]{64}$/.test(accountId) || /^0x[a-f0-9]{40}$/.test(accountId)) {
       setAccountStatus('empty');
-      setAccountBalance('');
       return;
     }
 
@@ -60,17 +57,13 @@ export default function Home() {
       
       if (data.error) {
         setAccountStatus('invalid');
-        setAccountBalance('');
         return;
       }
 
       const balance = data.result.amount;
-      const balanceInNear = (parseInt(balance) / 1e24).toFixed(5);
-      setAccountBalance(balanceInNear);
       setAccountStatus(parseInt(balance) === 0 ? 'empty' : 'valid');
-    } catch (error) {
+    } catch {
       setAccountStatus('invalid');
-      setAccountBalance('');
     }
   };
 
