@@ -1,5 +1,5 @@
 {
-  "name": "invoices",
+  "name": "tearpay-invoices",
   "version": "0.1.0",
   "private": true,
   "scripts": {
